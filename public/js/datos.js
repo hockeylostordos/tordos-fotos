@@ -113,15 +113,20 @@ export function misHijas() {
 }
 
 // ---------- Funciones de Cloudflare ----------
-async function token() {
+async function token(renovar = false) {
+  if (renovar) {
+    const { data } = await sb.auth.refreshSession();
+    if (data && data.session) return data.session.access_token;
+  }
   const { data } = await sb.auth.getSession();
   if (!data.session) throw new Error('Tu sesión venció. Volvé a entrar.');
   return data.session.access_token;
 }
 
-export async function api(ruta, { metodo = 'POST', cuerpo, tipo, sinSesion = false } = {}) {
+export async function api(ruta, opciones = {}, reintento = false) {
+  const { metodo = 'POST', cuerpo, tipo, sinSesion = false } = opciones;
   const cabeceras = {};
-  if (!sinSesion) cabeceras.Authorization = 'Bearer ' + (await token());
+  if (!sinSesion) cabeceras.Authorization = 'Bearer ' + (await token(reintento));
   let body = cuerpo;
   if (cuerpo && !(cuerpo instanceof Blob)) {
     cabeceras['Content-Type'] = 'application/json';
@@ -129,6 +134,7 @@ export async function api(ruta, { metodo = 'POST', cuerpo, tipo, sinSesion = fal
   } else if (tipo) cabeceras['Content-Type'] = tipo;
 
   const r = await fetch(ruta, { method: metodo, headers: cabeceras, body });
+  if (r.status === 401 && !sinSesion && !reintento) return api(ruta, opciones, true);
   const datos = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(datos.error || 'El servidor respondió con un error (' + r.status + ').');
   return datos;
@@ -138,9 +144,14 @@ export async function api(ruta, { metodo = 'POST', cuerpo, tipo, sinSesion = fal
 const completas = new Map(); // driveId → blob
 export async function fotoCompleta(driveId) {
   if (completas.has(driveId)) return completas.get(driveId);
-  const r = await fetch('/api/foto?id=' + encodeURIComponent(driveId), {
+  let r = await fetch('/api/foto?id=' + encodeURIComponent(driveId), {
     headers: { Authorization: 'Bearer ' + (await token()) },
   });
+  if (r.status === 401) {
+    r = await fetch('/api/foto?id=' + encodeURIComponent(driveId), {
+      headers: { Authorization: 'Bearer ' + (await token(true)) },
+    });
+  }
   if (!r.ok) {
     const d = await r.json().catch(() => ({}));
     throw new Error(d.error || 'No se pudo abrir la foto.');

@@ -1,9 +1,10 @@
 // GET /api/salud
 // Página de control: dice si la configuración está completa y si Drive y Supabase responden.
 // No muestra ninguna llave, solo "ok" o el problema.
-import { json, faltantes, supabase, tokenGoogle, carpeta, CARPETA_RAIZ } from '../../lib/servidor.js';
+import { json, faltantes, supabase, tokenGoogle, carpeta, CARPETA_RAIZ, limpiarEnv } from '../../lib/servidor.js';
 
-export async function onRequestGet({ env }) {
+export async function onRequestGet({ env: envOriginal }) {
+  const env = limpiarEnv(envOriginal);
   const resultado = { variables: 'ok', supabase: 'sin probar', drive: 'sin probar' };
 
   const falta = faltantes(env, false);

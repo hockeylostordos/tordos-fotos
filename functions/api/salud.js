@@ -5,7 +5,7 @@ import { json, faltantes, supabase, tokenGoogle, carpeta, CARPETA_RAIZ, limpiarE
 
 export async function onRequestGet({ env: envOriginal }) {
   const env = limpiarEnv(envOriginal);
-  const resultado = { variables: 'ok', supabase: 'sin probar', drive: 'sin probar' };
+  const resultado = { variables: 'ok', supabase: 'sin probar', supabase_publica: 'sin probar', drive: 'sin probar' };
 
   const falta = faltantes(env, false);
   if (falta.length) {
@@ -18,6 +18,18 @@ export async function onRequestGet({ env: envOriginal }) {
     resultado.supabase = 'ok';
   } catch (e) {
     resultado.supabase = 'Error: ' + e.message;
+  }
+
+  try {
+    const base = env.SUPABASE_URL.replace(/\/+$/, '').replace(/\/rest\/v1$/, '');
+    const r = await fetch(base + '/rest/v1/rpc/ping', {
+      method: 'POST',
+      headers: { apikey: env.SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    resultado.supabase_publica = r.ok ? 'ok' : 'Error ' + r.status + ': revisá SUPABASE_ANON_KEY (' + (await r.text()).slice(0, 80) + ')';
+  } catch (e) {
+    resultado.supabase_publica = 'Error: ' + e.message;
   }
 
   try {

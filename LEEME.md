@@ -19,13 +19,14 @@ App privada para que las familias suban y vean las fotos de las chicas.
 | `supabase/` | Scripts SQL de la base de datos (01 ya corrido, 02 correr una vez) |
 | `.github/workflows/` | Despertador automático de Supabase |
 
-## Configuración de Cloudflare Pages
+## Configuración de Cloudflare (Worker)
 
-- Framework preset: **None**
+El proyecto se publica como **Worker** con archivos estáticos (`wrangler.jsonc`):
 - Build command: *(vacío)*
-- Build output directory: **public**
+- Deploy command: `npx wrangler deploy`
+- El "despertador" de Supabase corre dentro del Worker cada 2 días.
 
-Variables (Settings → Variables and Secrets), todas como **Secret**:
+Variables en *Settings → Variables and Secrets* (las de la app, no las de Build), todas como **Secret**:
 
 | Nombre | De dónde sale |
 |---|---|
@@ -36,7 +37,7 @@ Variables (Settings → Variables and Secrets), todas como **Secret**:
 | `GOOGLE_CLIENT_SECRET` | Google Cloud → Clientes OAuth |
 | `GOOGLE_REFRESH_TOKEN` | OAuth Playground |
 
-Para comprobar que todo está bien conectado: abrir `https://TU-APP.pages.dev/api/salud`.
+Para comprobar que todo está bien conectado: abrir `https://tordos-fotos.TU-CUENTA.workers.dev/api/salud`.
 Tiene que decir `ok` en las tres líneas.
 
 ## Detalles útiles

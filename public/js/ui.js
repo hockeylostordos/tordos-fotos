@@ -156,7 +156,7 @@ export function plural(n, uno, varios) {
 // Mensaje entendible a partir de un error técnico
 export function mensajeError(e, porDefecto = 'Algo salió mal. Probá de nuevo.') {
   const m = (e && (e.message || e.error_description || e.error)) || '';
-  if (/failed to fetch|network|load failed/i.test(m)) return 'No hay conexión a internet. Revisá la señal y probá de nuevo.';
+  if (/failed to fetch|network|load failed|tardó demasiado/i.test(m)) return 'No hay conexión a internet. Revisá la señal y probá de nuevo.';
   if (/invalid login credentials/i.test(m)) return 'El email o la contraseña no son correctos.';
   if (/duplicate key|already exists|unique/i.test(m)) return 'Eso ya existe.';
   if (/foreign key/i.test(m)) return 'No se puede borrar porque tiene fotos asociadas.';

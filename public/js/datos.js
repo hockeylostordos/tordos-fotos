@@ -124,7 +124,7 @@ async function token(renovar = false) {
 }
 
 export async function api(ruta, opciones = {}, reintento = false) {
-  const { metodo = 'POST', cuerpo, tipo, sinSesion = false } = opciones;
+  const { metodo = 'POST', cuerpo, tipo, sinSesion = false, limite = 60000 } = opciones;
   const cabeceras = {};
   if (!sinSesion) cabeceras.Authorization = 'Bearer ' + (await token(reintento));
   let body = cuerpo;
@@ -133,7 +133,17 @@ export async function api(ruta, opciones = {}, reintento = false) {
     body = JSON.stringify(cuerpo);
   } else if (tipo) cabeceras['Content-Type'] = tipo;
 
-  const r = await fetch(ruta, { method: metodo, headers: cabeceras, body });
+  const control = new AbortController();
+  const reloj = setTimeout(() => control.abort(), limite);
+  let r;
+  try {
+    r = await fetch(ruta, { method: metodo, headers: cabeceras, body, signal: control.signal });
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('La conexión tardó demasiado.');
+    throw e;
+  } finally {
+    clearTimeout(reloj);
+  }
   if (r.status === 401 && !sinSesion && !reintento) return api(ruta, opciones, true);
   const datos = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(datos.error || 'El servidor respondió con un error (' + r.status + ').');

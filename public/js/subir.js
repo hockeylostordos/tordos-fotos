@@ -54,20 +54,62 @@ function indicador(paso) {
 }
 
 // ---------- Paso 1: elegir fotos ----------
-function selectorArchivos({ camara }) {
-  const input = h('input', { type: 'file', accept: 'image/*', hidden: true });
-  if (camara) input.setAttribute('capture', 'environment');
+// Los dos selectores de archivos se crean UNA sola vez y quedan siempre en la página
+// (no ocultos con display:none). Así funciona en iPhone, Android y compu.
+const selectores = {};
+
+function selector(tipo) {
+  if (selectores[tipo] && selectores[tipo].isConnected) return selectores[tipo];
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.id = 'elegir-' + tipo;
+  input.className = 'selector-oculto';
+  input.tabIndex = -1;
+  input.setAttribute('aria-hidden', 'true');
+  if (tipo === 'camara') input.setAttribute('capture', 'environment');
   else input.multiple = true;
-  input.onchange = async () => {
-    const nuevos = [...input.files].filter((f) => f.type.startsWith('image/') || /\.(jpe?g|png|heic|heif|webp)$/i.test(f.name));
-    if (!nuevos.length) return;
-    for (const f of nuevos) {
-      s.archivos.push({ archivo: f, vista: URL.createObjectURL(f), estado: 'esperando', error: '' });
+  let procesando = false;
+  const alElegir = async () => {
+    if (procesando || !input.files || !input.files.length) return;
+    procesando = true;
+    olvidarCamara();
+    try {
+      const nuevos = [...input.files].filter((f) => !f.type || f.type.startsWith('image/') || /\.(jpe?g|png|heic|heif|webp|gif)$/i.test(f.name));
+      if (!nuevos.length) {
+        aviso('Ese archivo no es una foto. Probá con otra.', 'error');
+        return;
+      }
+      for (const f of nuevos) {
+        s.archivos.push({ archivo: f, vista: URL.createObjectURL(f), estado: 'esperando', error: '' });
+      }
+      pintar(); // se muestran enseguida
+      await Promise.race([detectarFecha(), new Promise((r) => setTimeout(r, 3000))]);
+    } catch (e) {
+      console.error(e);
+      aviso('No se pudieron leer las fotos. Probá de nuevo.', 'error');
+    } finally {
+      input.value = ''; // permite volver a elegir la misma foto
+      procesando = false;
+      pintar();
     }
-    await detectarFecha();
-    pintar();
   };
+  input.addEventListener('change', alElegir);
+  input.addEventListener('input', alElegir);
+  document.body.append(input);
+  selectores[tipo] = input;
   return input;
+}
+
+// Botón que abre el selector: es un <label>, que en iPhone es lo más confiable
+function botonElegir(tipo, clase, contenido) {
+  const input = selector(tipo);
+  const etiqueta = h('label', { for: input.id, clase, role: 'button', tabindex: '0' }, contenido);
+  etiqueta.addEventListener('click', () => { if (tipo === 'camara') marcarCamara(); else olvidarCamara(); });
+  etiqueta.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); etiqueta.click(); }
+  });
+  return etiqueta;
 }
 
 async function detectarFecha() {
@@ -83,23 +125,41 @@ async function detectarFecha() {
   Object.assign(s, { anio, mes, fechaDetectada: true });
 }
 
+const CLAVE_CAMARA = 'tordos-camara-abierta';
+
+function olvidarCamara() {
+  try { sessionStorage.removeItem(CLAVE_CAMARA); } catch { /* */ }
+}
+
+function marcarCamara() {
+  try { sessionStorage.setItem(CLAVE_CAMARA, String(Date.now())); } catch { /* */ }
+}
+
+// Si la cámara se abrió hace poco y al volver no hay fotos, el celular recargó la página
+function camaraSeCerro() {
+  let t = 0;
+  try { t = +sessionStorage.getItem(CLAVE_CAMARA) || 0; } catch { /* */ }
+  return t && Date.now() - t < 10 * 60 * 1000 && !s.archivos.length;
+}
+
 function vistaElegir() {
-  const inCamara = selectorArchivos({ camara: true });
-  const inGaleria = selectorArchivos({ camara: false });
   const hay = s.archivos.length;
 
   const partes = [
     indicador(1),
     h('div', h('h1', 'Subir fotos'), h('p.suave', 'Paso 1 de 2: elegí las fotos que querés compartir.')),
-    inCamara, inGaleria,
   ];
 
   if (!hay) {
+    if (camaraSeCerro()) {
+      partes.push(h('p.nota', 'Parece que el celular cerró la app al abrir la cámara (pasa en algunos Android con poca memoria). ',
+        'Probá así: sacá la foto con la cámara normal del celular y después tocá "Elegir de la galería".'));
+    }
     partes.push(h('div.elegir-origen',
-      h('button.origen.galeria', { type: 'button', onclick: () => inGaleria.click() },
-        icono('galeria'), h('span', 'Elegir de la galería', h('small', 'Podés marcar muchas fotos a la vez'))),
-      h('button.origen.camara', { type: 'button', onclick: () => inCamara.click() },
-        icono('camara'), h('span', 'Sacar una foto ahora', h('small', 'Se abre la cámara del celular')))));
+      botonElegir('galeria', 'origen galeria',
+        [icono('galeria'), h('span', 'Elegir de la galería', h('small', 'Podés marcar muchas fotos a la vez'))]),
+      botonElegir('camara', 'origen camara',
+        [icono('camara'), h('span', 'Sacar una foto ahora', h('small', 'Se abre la cámara del celular'))])));
     return partes;
   }
 
@@ -115,8 +175,8 @@ function vistaElegir() {
           pintar();
         } }, icono('x'))))),
     h('div.fila-botones',
-      h('button.btn.btn-celeste', { type: 'button', onclick: () => inGaleria.click() }, icono('galeria'), 'Agregar más'),
-      h('button.btn.btn-celeste', { type: 'button', onclick: () => inCamara.click() }, icono('camara'), 'Sacar otra')),
+      botonElegir('galeria', 'btn btn-celeste', [icono('galeria'), 'Agregar más']),
+      botonElegir('camara', 'btn btn-celeste', [icono('camara'), 'Sacar otra'])),
     h('div.pie-fijo',
       h('button.btn.btn-rojo.btn-bloque', { type: 'button', onclick: () => { s.fase = 'etiquetar'; pintar(); window.scrollTo(0, 0); } },
         'Siguiente: ponerles datos')));
@@ -238,53 +298,123 @@ function avisarSalida(e) {
   e.returnValue = '';
 }
 
+// ---------- Reintentos automáticos (para 4G con mala señal) ----------
+const ESPERAS = [2000, 5000, 10000, 20000]; // hasta 5 intentos por paso
+
+function esErrorDeRed(e) {
+  const m = String((e && (e.message || e.error)) || e || '');
+  return /failed to fetch|network|load failed|timeout|tard[oó] demasiado|aborted|\((50[234])|conexi/i.test(m)
+    || (e && e.name === 'AbortError');
+}
+
+function esperarConexion() {
+  if (navigator.onLine !== false) return Promise.resolve();
+  return new Promise((resolver) => {
+    const listo = () => { window.removeEventListener('online', listo); resolver(); };
+    window.addEventListener('online', listo);
+    setTimeout(listo, 30000);
+  });
+}
+
+async function conReintentos(a, paso) {
+  for (let intento = 0; ; intento++) {
+    try {
+      return await paso();
+    } catch (e) {
+      if (intento >= ESPERAS.length || !esErrorDeRed(e)) throw e;
+      a.reintentando = true;
+      refrescar();
+      await new Promise((r) => setTimeout(r, ESPERAS[intento]));
+      await esperarConexion();
+    }
+  }
+}
+
+// Si Supabase devuelve el error dentro de la respuesta, lo convierte en excepción
+function revisar(r) {
+  if (r.error) throw r.error;
+  return r.data;
+}
+
 async function subirUna(a) {
   a.estado = 'subiendo';
+  a.reintentando = false;
   refrescar();
   try {
-    const { img, url } = await leerImagen(a.archivo);
-    const grande = await achicar(img, LADO_FOTO, CALIDAD_FOTO);
-    const chica = await achicar(img, LADO_MINIATURA, CALIDAD_MINIATURA);
-    URL.revokeObjectURL(url);
-
-    const div = estado.divisionPorId.get(s.division);
-    const nombreArchivo = [
-      `${s.anio}-${String(s.mes).padStart(2, '0')}`, div && div.nombre, s.actividad, s.titulo,
-      Date.now().toString(36),
-    ].filter(Boolean).join(' ').slice(0, 110) + '.jpg';
-
-    const params = new URLSearchParams({ anio: s.anio, mes: s.mes, nombre: nombreArchivo });
-    const { driveId } = await api('/api/subir?' + params, { cuerpo: grande.blob, tipo: 'image/jpeg' });
-
-    const ruta = `fotos/${s.anio}/${crypto.randomUUID()}.jpg`;
-    const sube = await sb.storage.from('miniaturas').upload(ruta, chica.blob, { contentType: 'image/jpeg', cacheControl: '31536000' });
-    if (sube.error) throw sube.error;
-
-    const { data: foto, error } = await sb.from('fotos').insert({
-      drive_file_id: driveId,
-      miniatura_path: ruta,
-      nombre_archivo: nombreArchivo,
-      ancho: grande.ancho,
-      alto: grande.alto,
-      mes: s.mes,
-      anio: s.anio,
-      division_id: s.division,
-      tipo_actividad: s.actividad,
-      titulo: s.titulo.trim() || null,
-      subido_por: estado.yo.id,
-    }).select('id').single();
-    if (error) throw error;
-
-    if (s.jugadoras.size) {
-      const { error: e2 } = await sb.from('foto_jugadoras').insert([...s.jugadoras].map((jugadora_id) => ({ foto_id: foto.id, jugadora_id })));
-      if (e2) console.error(e2);
+    // 1. Achicar (solo una vez, aunque haya reintentos)
+    if (!a.grande) {
+      const { img, url } = await leerImagen(a.archivo);
+      a.grande = await achicar(img, LADO_FOTO, CALIDAD_FOTO);
+      a.chica = await achicar(img, LADO_MINIATURA, CALIDAD_MINIATURA);
+      URL.revokeObjectURL(url);
+      const div = estado.divisionPorId.get(s.division);
+      a.nombreArchivo = [
+        `${s.anio}-${String(s.mes).padStart(2, '0')}`, div && div.nombre, s.actividad, s.titulo,
+        Date.now().toString(36),
+      ].filter(Boolean).join(' ').slice(0, 110) + '.jpg';
     }
+
+    // 2. Subir a Drive (si ya se subió en un intento anterior, no se repite)
+    if (!a.driveId) {
+      const params = new URLSearchParams({ anio: s.anio, mes: s.mes, nombre: a.nombreArchivo });
+      const r = await conReintentos(a, () => api('/api/subir?' + params, { cuerpo: a.grande.blob, tipo: 'image/jpeg', limite: 120000 }));
+      a.driveId = r.driveId;
+    }
+
+    // 3. Miniatura
+    if (!a.ruta) {
+      const ruta = `fotos/${s.anio}/${crypto.randomUUID()}.jpg`;
+      await conReintentos(a, async () => {
+        const r = await sb.storage.from('miniaturas').upload(ruta, a.chica.blob, { contentType: 'image/jpeg', cacheControl: '31536000', upsert: true });
+        revisar(r);
+      });
+      a.ruta = ruta;
+    }
+
+    // 4. Guardar los datos
+    if (!a.fotoId) {
+      a.fotoId = await conReintentos(a, async () => {
+        const r = await sb.from('fotos').insert({
+          drive_file_id: a.driveId,
+          miniatura_path: a.ruta,
+          nombre_archivo: a.nombreArchivo,
+          ancho: a.grande.ancho,
+          alto: a.grande.alto,
+          mes: s.mes,
+          anio: s.anio,
+          division_id: s.division,
+          tipo_actividad: s.actividad,
+          titulo: s.titulo.trim() || null,
+          subido_por: estado.yo.id,
+        }).select('id').single();
+        if (r.error && /duplicate|unique/i.test(r.error.message || '')) {
+          // Se guardó en un intento anterior pero la respuesta no llegó
+          const ya = revisar(await sb.from('fotos').select('id').eq('drive_file_id', a.driveId).single());
+          return ya.id;
+        }
+        return revisar(r).id;
+      });
+    }
+
+    // 5. Quiénes están en la foto
+    if (s.jugadoras.size && !a.etiquetada) {
+      await conReintentos(a, async () => {
+        const r = await sb.from('foto_jugadoras').upsert(
+          [...s.jugadoras].map((jugadora_id) => ({ foto_id: a.fotoId, jugadora_id })),
+          { onConflict: 'foto_id,jugadora_id', ignoreDuplicates: true });
+        revisar(r);
+      }).catch((e) => console.error(e));
+      a.etiquetada = true;
+    }
+
     a.estado = 'ok';
+    a.grande = a.chica = null; // libera memoria
   } catch (e) {
     console.error(e);
     a.estado = 'mal';
     a.error = mensajeError(e, 'No se pudo subir.');
   }
+  a.reintentando = false;
   refrescar();
 }
 
@@ -297,6 +427,8 @@ function refrescar() {
   const texto = contenedor.querySelector('[data-progreso]');
   if (barra) barra.style.width = Math.round((hechas / total) * 100) + '%';
   if (texto) texto.textContent = `${hechas} de ${total}`;
+  const aviso = contenedor.querySelector('[data-senal]');
+  if (aviso) aviso.hidden = !s.archivos.some((a) => a.reintentando && a.estado === 'subiendo');
   contenedor.querySelectorAll('.previa').forEach((nodo, i) => {
     const a = s.archivos[i];
     if (!a || nodo.dataset.estado === a.estado) return;
@@ -319,6 +451,7 @@ function vistaSubiendo() {
   return [
     indicador(3),
     h('div', h('h1', 'Subiendo tus fotos…'), h('p.suave', 'Dejá la app abierta hasta que termine.')),
+    h('p.nota', { 'data-senal': '', hidden: true }, 'La señal está débil. Seguimos intentando solos, no hace falta que toques nada.'),
     h('div.tarjeta',
       h('div.seccion-titulo', h('b', 'Progreso'), h('b', { 'data-progreso': '' }, `${hechas} de ${total}`)),
       h('div.barra-progreso', h('div', { style: `width:${Math.round((hechas / total) * 100)}%` }))),

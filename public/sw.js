@@ -1,7 +1,7 @@
 // Service worker mínimo: permite instalar la app y que abra rápido.
 // Siempre intenta traer la versión nueva de internet; si no hay señal, usa la guardada.
-const CACHE = 'tordos-v2';
-const BASICOS = ['/', '/index.html', '/estilos.css?v=2', '/icons/escudo.svg'];
+const CACHE = 'tordos-v4';
+const BASICOS = ['/', '/index.html', '/estilos.css?v=4', '/icons/escudo.svg'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(BASICOS)).catch(() => {}));
